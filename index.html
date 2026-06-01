@@ -1217,11 +1217,34 @@ function showPage(id, btn) {
   window.scrollTo(0, 0);
 }
 
-// ===== INSCRICAO =====
-let inscritos = JSON.parse(localStorage.getItem('corrida_maluka_inscritos') || '[]');
-renderTabela();
+// ===== SUPABASE CONFIG =====
+const SUPA_URL = 'https://stzeislbmnsnvfqtrdln.supabase.co';
+const SUPA_KEY = 'sb_publishable_-zGxgzHfIh6ATLUQEeo5Uw_37nqGWg8';
 
-function confirmarInscricao() {
+async function supaFetch(method, body = null) {
+  const opts = {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SUPA_KEY,
+      'Authorization': 'Bearer ' + SUPA_KEY,
+      'Prefer': method === 'POST' ? 'return=representation' : ''
+    }
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(SUPA_URL + '/rest/v1/inscritos?order=id.asc', opts);
+  return res.json();
+}
+
+// ===== INSCRICAO =====
+async function carregarInscritos() {
+  try {
+    const data = await supaFetch('GET');
+    if (Array.isArray(data)) renderTabela(data);
+  } catch(e) { console.error(e); }
+}
+
+async function confirmarInscricao() {
   const nome = document.getElementById('field-nome').value.trim();
   const serie = document.getElementById('field-serie').value.trim();
   const alimento = document.getElementById('field-alimento').value;
@@ -1234,26 +1257,46 @@ function confirmarInscricao() {
   const now = new Date();
   const data = now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
 
-  const inscrito = { nome, serie, alimento, data };
-  inscritos.push(inscrito);
-  localStorage.setItem('corrida_maluka_inscritos', JSON.stringify(inscritos));
+  const btn = document.querySelector('.btn-confirmar');
+  btn.textContent = 'ENVIANDO...';
+  btn.disabled = true;
 
-  // Atualiza botão WhatsApp
-  const msg = encodeURIComponent(
-    `Olá! Me inscrevi na Corrida Maluka.\n\n👤 Nome: ${nome}\n🏫 Turma: ${serie}\n🎁 Alimento: ${alimento}\n📅 Data: ${data}`
-  );
-  document.getElementById('wppBtn').href = `https://wa.me/5515998290856?text=${msg}`;
+  try {
+    const res = await fetch(SUPA_URL + '/rest/v1/inscritos', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPA_KEY,
+        'Authorization': 'Bearer ' + SUPA_KEY,
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify({ nome, serie, alimento, data })
+    });
 
-  // Limpa form
-  document.getElementById('field-nome').value = '';
-  document.getElementById('field-serie').value = '';
-  document.getElementById('field-alimento').value = '';
+    if (res.ok) {
+      const msg = encodeURIComponent(
+        `Olá! Me inscrevi na Corrida Maluka.\n\n👤 Nome: ${nome}\n🏫 Turma: ${serie}\n🎁 Alimento: ${alimento}\n📅 Data: ${data}`
+      );
+      document.getElementById('wppBtn').href = `https://wa.me/5515998290856?text=${msg}`;
 
-  renderTabela();
-  showToast();
+      document.getElementById('field-nome').value = '';
+      document.getElementById('field-serie').value = '';
+      document.getElementById('field-alimento').value = '';
+
+      await carregarInscritos();
+      showToast();
+    } else {
+      alert('Erro ao salvar. Tente novamente.');
+    }
+  } catch(e) {
+    alert('Erro de conexão. Tente novamente.');
+  }
+
+  btn.textContent = 'CONFIRMAR PRESENÇA';
+  btn.disabled = false;
 }
 
-function renderTabela() {
+function renderTabela(inscritos) {
   const tbody = document.getElementById('pilotosBody');
   const table = document.getElementById('pilotosTable');
   const empty = document.getElementById('emptyState');
@@ -1282,6 +1325,11 @@ function renderTabela() {
     tbody.appendChild(tr);
   });
 }
+
+// Carrega ao abrir a página de inscrição
+carregarInscritos();
+// Atualiza a cada 15 segundos automaticamente
+setInterval(carregarInscritos, 15000);
 
 function showToast() {
   const t = document.getElementById('toast');
